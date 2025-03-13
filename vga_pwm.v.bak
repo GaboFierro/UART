@@ -1,0 +1,100 @@
+module vga_pwm (
+    input ADC_CLK_10,
+    input MAX10_CLK1_50,
+    input MAX10_CLK2_50,
+
+    output reg [3:0] VGA_R,
+    output reg [3:0] VGA_G,
+    output reg [3:0] VGA_B,
+    output VGA_HS,
+    output VGA_VS,
+    
+    output [7:0] HEX0,
+    output [7:0] HEX1,
+    output [7:0] HEX2,
+    output [7:0] HEX3,
+    output [7:0] HEX4,
+    output [7:0] HEX5,
+
+    input [1:0] KEY,
+    output [9:0] LEDR,
+    input [9:0] SW,
+
+    output GSENSOR_CS_N,
+    input [2:1] GSENSOR_INT,
+    output GSENSOR_SCLK,
+    inout GSENSOR_SDI,
+    inout GSENSOR_SDO,
+
+    output PWM_out  // Salida del PWM
+);
+
+localparam SPI_CLK_FREQ = 200;
+localparam UPDATE_FREQ = 1;
+
+wire reset_n = KEY[0];
+wire clk, spi_clk, spi_clk_out;
+wire data_update;
+wire signed [15:0] data_x, data_y, data_z;
+
+// Instancia del PLL
+PLL ip_inst (
+    .inclk0 ( MAX10_CLK1_50 ),
+    .c0 ( clk ),
+    .c1 ( spi_clk ),
+    .c2 ( spi_clk_out )
+);
+
+// SPI para sensor
+spi_control #(.SPI_CLK_FREQ(SPI_CLK_FREQ), .UPDATE_FREQ(UPDATE_FREQ))
+spi_ctrl (
+    .reset_n(reset_n), .clk(clk), .spi_clk(spi_clk), .spi_clk_out(spi_clk_out),
+    .data_update(data_update),
+    .data_x(data_x), .data_y(data_y), .data_z(data_z),
+    .SPI_SDI(GSENSOR_SDI), .SPI_SDO(GSENSOR_SDO), .SPI_CSN(GSENSOR_CS_N),
+    .SPI_CLK(GSENSOR_SCLK), .interrupt()
+);
+
+// Instancia del módulo PWM
+pwm pwm_inst (
+    .clk(clk),
+    .enable(SW[0]),  // Switch para habilitar PWM
+    .btn_up(SW[1]),  // Botón de incremento
+    .btn_down(SW[2]), // Botón de decremento
+    .PWM(PWM_out)
+);
+
+// ---------------- VGA Implementation ---------------- //
+wire inDisplayArea;
+wire [9:0] CounterX, CounterY;
+wire clk_25;
+
+clk_divider #(.FREQ(2)) clk_div_inst (
+    .clk(MAX10_CLK1_50),
+    .rst(0),
+    .clk_div(clk_25)
+);
+
+hvsync_generator hsync_inst (
+    .clk(clk_25),
+    .vga_h_sync(VGA_HS),
+    .vga_v_sync(VGA_VS),
+    .CounterX(CounterX),
+    .CounterY(CounterY),
+    .inDisplayArea(inDisplayArea)
+);
+
+// Generación de píxeles VGA
+always @(posedge clk_25) begin
+    if (inDisplayArea) begin
+        VGA_R <= 4'b1111;
+        VGA_G <= 4'b1111;
+        VGA_B <= 4'b1111;
+    end else begin
+        VGA_R <= 4'b0000;
+        VGA_G <= 4'b0000;
+        VGA_B <= 4'b0000;
+    end
+end
+
+endmodule

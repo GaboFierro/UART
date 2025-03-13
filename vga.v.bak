@@ -1,0 +1,123 @@
+module vga(
+    input  MAX10_CLK1_50,
+    input  [7:0] sw,  // Recibe switches
+    output reg [3:0] VGA_R,
+    output reg [3:0] VGA_G,
+    output reg [3:0] VGA_B,
+    output         VGA_HS,
+    output         VGA_VS
+);
+    // Parámetros: Letras (fijas) y números (dinámicos)
+    parameter [7:0] LETTERS_0 = 8'h58;  // X
+    parameter [7:0] LETTERS_1 = 8'h59;  // Y
+    parameter [7:0] LETTERS_2 = 8'h5A;  // Z
+
+    // Valor del número cambia dependiendo del estado de SW0
+    wire [3:0] number_value;
+    assign number_value = sw[0] ? 4'd2 : 4'd0; // Si SW0 está arriba, es 2; si está abajo, es 0
+
+    // Posiciones iniciales con mayor separación
+    localparam X_START_LETTER = 100;  // Letras en la columna izquierda
+    localparam X_START_NUMBER = 600;  // Mayor separación de los números a la derecha
+    localparam Y_START = 100;
+    localparam LINE_SPACING = 250;    // Espaciado grande entre filas
+
+    // Señales de sincronización y contadores de píxeles
+    wire inDisplayArea;
+    wire [9:0] CounterX;
+    wire [9:0] CounterY;
+    wire clk_25;
+
+    // Reducción de frecuencia a 25 MHz para la VGA
+    clk_divider #(.FREQ(2)) clk_div_inst (
+        .clk(MAX10_CLK1_50),
+        .rst(0),
+        .clk_div(clk_25)
+    );
+
+    hvsync_generator hsync_inst (
+        .clk(clk_25),
+        .vga_h_sync(VGA_HS),
+        .vga_v_sync(VGA_VS),
+        .CounterX(CounterX),
+        .CounterY(CounterY),
+        .inDisplayArea(inDisplayArea)
+    );
+
+    // Señales de píxel para letras y números
+    wire pixelL0, pixelL1, pixelL2;
+    wire pixelN0, pixelN1, pixelN2;
+
+    // Instanciación de módulos para letras (columna izquierda)
+    letter_generator letter_x (
+        .letter_code(LETTERS_0),
+        .x(CounterX),
+        .y(CounterY),
+        .base_x(X_START_LETTER),
+        .base_y(Y_START),
+        .pixel(pixelL0)
+    );
+    
+    letter_generator letter_y (
+        .letter_code(LETTERS_1),
+        .x(CounterX),
+        .y(CounterY),
+        .base_x(X_START_LETTER),
+        .base_y(Y_START + LINE_SPACING),
+        .pixel(pixelL1)
+    );
+    
+    letter_generator letter_z (
+        .letter_code(LETTERS_2),
+        .x(CounterX),
+        .y(CounterY),
+        .base_x(X_START_LETTER),
+        .base_y(Y_START + 2 * LINE_SPACING),
+        .pixel(pixelL2)
+    );
+
+    // Instanciación de módulos para números (columna derecha) con valores dinámicos
+    number_generator num_x (
+        .number_code(number_value),
+        .x(CounterX),
+        .y(CounterY),
+        .base_x(X_START_NUMBER),
+        .base_y(Y_START),
+        .pixel(pixelN0)
+    );
+    
+    number_generator num_y (
+        .number_code(number_value),
+        .x(CounterX),
+        .y(CounterY),
+        .base_x(X_START_NUMBER),
+        .base_y(Y_START + LINE_SPACING),
+        .pixel(pixelN1)
+    );
+    
+    number_generator num_z (
+        .number_code(number_value),
+        .x(CounterX),
+        .y(CounterY),
+        .base_x(X_START_NUMBER),
+        .base_y(Y_START + 2 * LINE_SPACING),
+        .pixel(pixelN2)
+    );
+
+    // Combina las señales de cada letra y número
+    wire text_pixel;
+    assign text_pixel = pixelL0 | pixelL1 | pixelL2 | pixelN0 | pixelN1 | pixelN2;
+
+    // Generación de color: texto en blanco sobre fondo negro
+    always @(posedge clk_25) begin
+        if (inDisplayArea && text_pixel) begin
+            VGA_R <= 4'b1111;
+            VGA_G <= 4'b1111;
+            VGA_B <= 4'b1111;
+        end else begin
+            VGA_R <= 4'b0000;
+            VGA_G <= 4'b0000;
+            VGA_B <= 4'b0000;
+        end
+    end
+endmodule
